@@ -36,8 +36,17 @@ app/
   körande containern med en template (ikon/WebUI/update/edit).
 - **Create-only** medvetet - remove/stop hålls utanför för minimal attackyta.
 - **Fail-closed**: `config.validate()` kräver API_KEY (>=16 tecken) vid start.
-- Guardrails: `ALLOWED_NAME_PREFIXES`, `ALLOWED_REGISTRIES`, `PROTECTED_NAMES`,
-  namnkrock-koll, rate limit.
+- **Host-eskalering spärrad by default:** `privileged` nekas utan
+  `ALLOW_PRIVILEGED`; volymer bara under `ALLOWED_VOLUME_PREFIXES`
+  (default `/mnt/user/`) och aldrig `DENIED_VOLUME_PREFIXES` (system + docker.sock);
+  devices default-deny. Utan dessa vore namn/registry-guardrails skenbart skydd.
+- `ALLOWED_REGISTRIES` matchas på `/`-gräns (inte naiv `startswith`).
+- **Create-endpoint är sync `def`** => FastAPI kör den i threadpool; annars fryser
+  det blockerande docker-SDK-anropet (image-pull) hela event-loopen inkl. /health.
+- **Fast `DOCKER_API_VERSION` (1.44)** så klienten inte förhandlar/ansluter vid
+  konstruktion - appen kan boota "degraded" om proxyn är nere.
+- Bred felfångst (docker `APIError` + `requests`-transportfel) + catch-all
+  `Exception`-handler i main => alltid JSON-kuvert `{"ok":false,"error":...}`.
 
 ## Miljövariabler
 Se `.env.example`. Nyckelvariabler: `API_KEY`, `DOCKER_HOST`, `TEMPLATE_DIR`,
@@ -58,5 +67,7 @@ Lokalt end-to-end: `docker compose -f docker-compose.dev.yml up --build` och
 `POST /containers` med ett `dockyard-test-`-namn.
 
 ## Status
-v0.1.0 - create + template + guardrails klart. Ej driftsatt på TERVO2 än.
+v0.1.0 - create + template + guardrails klart, härdat efter Fable-granskning
+(privileged/volym/device-spärrar, threadpool, felfångst, fast API-version).
+E2E-verifierat lokalt (10 fall inkl. negativa). Ej driftsatt på TERVO2 än.
 Kvarstår: DOCKER.md för template-katalog-mappningen, ev. dry-run-läge.

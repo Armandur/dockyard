@@ -20,7 +20,9 @@ def get_docker() -> docker.DockerClient:
     global _client
     if _client is None:
         _client = docker.DockerClient(
-            base_url=config.DOCKER_HOST, timeout=config.DOCKER_TIMEOUT
+            base_url=config.DOCKER_HOST,
+            timeout=config.DOCKER_TIMEOUT,
+            version=config.DOCKER_API_VERSION,
         )
     return _client
 

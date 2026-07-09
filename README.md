@@ -39,12 +39,19 @@ Svar `201`:
 `GET /health` - status + om socket-proxyn svarar (ingen nyckel krävs).
 
 ### Guardrails
-- API-nyckel krävs på create.
-- `ALLOWED_NAME_PREFIXES` / `ALLOWED_REGISTRIES` / `PROTECTED_NAMES` låser vad
-  som får skapas.
-- Vägrar skapa om namnet redan finns (ingen clobbering).
-- Rate limit på create.
-- Allt som skapas stämplas med label `dockyard.managed=true`.
+Shimmen skapar containrar på en host - flera spärrar hindrar att en klient med
+giltig nyckel eskalerar till hosten:
+- API-nyckel krävs på create (`hmac.compare_digest`).
+- **`privileged` är default-nekad** (`ALLOW_PRIVILEGED=true` krävs) - annars ger
+  det i praktiken root på hosten.
+- **Volymer default-restriktiva:** bara `/mnt/user/` som standard; system-
+  kataloger (`/boot`,`/etc`,`/root`,`/proc`,`/sys`,`/var/run`,`/run`,`/dev`) och
+  `/` nekas alltid. Styrs av `ALLOWED_VOLUME_PREFIXES` / `DENIED_VOLUME_PREFIXES`.
+- **Devices default-deny:** inga får mappas utan `ALLOWED_DEVICE_PREFIXES`.
+- `ALLOWED_NAME_PREFIXES` / `ALLOWED_REGISTRIES` (matchas på `/`-gräns) /
+  `PROTECTED_NAMES` låser namn och images.
+- Vägrar skapa om namnet redan finns (ingen clobbering), även vid race.
+- Rate limit på create. Allt stämplas med label `dockyard.managed=true`.
 
 ## Lokal dev/test
 Kör shimmen + proxy mot VM:ens egna docker (skapar bara testcontainrar):

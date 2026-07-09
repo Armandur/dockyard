@@ -27,6 +27,10 @@ API_KEY = os.environ.get("API_KEY", "").strip()
 # Docker-motorn nås via socket-proxyn, aldrig socketen direkt.
 DOCKER_HOST = os.environ.get("DOCKER_HOST", "tcp://socket-proxy:2375").strip()
 DOCKER_TIMEOUT = int(os.environ.get("DOCKER_TIMEOUT", "120"))
+# Fast API-version => klienten förhandlar inte (ansluter inte) vid konstruktion,
+# så appen kan boota "degraded" även om proxyn är nere. 1.44 = Docker 25+
+# (daemon på TERVO2 kör nyare och kräver minst 1.44).
+DOCKER_API_VERSION = os.environ.get("DOCKER_API_VERSION", "1.44").strip()
 
 # Unraids template-katalog, monterad rw. Tom => skriv ingen template.
 TEMPLATE_DIR = os.environ.get("TEMPLATE_DIR", "/templates-user").strip()
@@ -35,10 +39,24 @@ WRITE_TEMPLATE = _bool("WRITE_TEMPLATE", True)
 # Guardrails.
 # Tillåtna namn-prefix (tom lista = tillåt alla namn som inte krockar).
 ALLOWED_NAME_PREFIXES = _csv("ALLOWED_NAME_PREFIXES")
-# Tillåtna image-registries/repos (tom lista = tillåt alla). Matchas som prefix.
+# Tillåtna image-registries/repos (tom lista = tillåt alla). Matchas på /-gräns.
 ALLOWED_REGISTRIES = _csv("ALLOWED_REGISTRIES")
 # Skapa aldrig containrar med dessa exakta namn (skydd för prod).
 PROTECTED_NAMES = set(_csv("PROTECTED_NAMES"))
+
+# Volymer: default-restriktivt (motverkar host-eskalering via godtycklig mount).
+# Tom => faller tillbaka på en säker default (bara appdata + shares).
+ALLOWED_VOLUME_PREFIXES = _csv("ALLOWED_VOLUME_PREFIXES") or ["/mnt/user/"]
+# Nekas alltid, oavsett allowlist (host-USB, systemkataloger, docker-socket).
+DENIED_VOLUME_PREFIXES = _csv("DENIED_VOLUME_PREFIXES") or [
+    "/boot", "/etc", "/root", "/proc", "/sys", "/var/run", "/run", "/dev",
+]
+
+# Devices: default-deny. Tom lista => inga devices får mappas alls.
+ALLOWED_DEVICE_PREFIXES = _csv("ALLOWED_DEVICE_PREFIXES")
+
+# Privilegierade containrar: default-deny (ger i praktiken root på hosten).
+ALLOW_PRIVILEGED = _bool("ALLOW_PRIVILEGED", False)
 
 # Enkel rate limit på create (anrop per fönster).
 RATELIMIT_MAX = int(os.environ.get("RATELIMIT_MAX", "10"))

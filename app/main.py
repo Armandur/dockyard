@@ -36,5 +36,13 @@ async def _dockyard_error(request: Request, exc: DockyardError):
     return JSONResponse(status_code=exc.status_code, content={"ok": False, "error": exc.message})
 
 
+@app.exception_handler(Exception)
+async def _unhandled(request: Request, exc: Exception):
+    # Fångar allt oväntat (t.ex. transportfel) och svarar med samma JSON-kuvert
+    # som resten av API:t - utan att läcka interna detaljer till klienten.
+    log.exception("Ohanterat fel på %s", request.url.path)
+    return JSONResponse(status_code=500, content={"ok": False, "error": "Internt fel."})
+
+
 app.include_router(health.router)
 app.include_router(containers.router)

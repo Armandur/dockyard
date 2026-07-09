@@ -2,6 +2,7 @@
 import logging
 
 import docker
+import requests
 from docker.errors import APIError, ImageNotFound, NotFound
 
 from . import config, template
@@ -9,6 +10,29 @@ from .errors import ConflictError, DockerBackendError, ForbiddenSpec
 from .schemas import ContainerSpec, CreateResult
 
 log = logging.getLogger("dockyard")
+
+# Transportfel från docker-SDK:t (requests) som inte ärver APIError.
+_TRANSPORT_ERRORS = (requests.exceptions.RequestException, OSError)
+
+
+def _under(path: str, prefixes: list[str]) -> bool:
+    """True om path är exakt eller ligger under någon prefix (på /-gräns)."""
+    for p in prefixes:
+        p = p.rstrip("/")
+        if not p:
+            continue
+        if path == p or path.startswith(p + "/"):
+            return True
+    return False
+
+
+def _registry_allowed(image: str) -> bool:
+    if not config.ALLOWED_REGISTRIES:
+        return True
+    return any(
+        image == r or image.startswith(r.rstrip("/") + "/")
+        for r in config.ALLOWED_REGISTRIES
+    )
 
 
 def _split_ref(ref: str) -> tuple[str, str]:
@@ -35,13 +59,36 @@ def _check_guardrails(spec: ContainerSpec, client: docker.DockerClient) -> None:
             + ", ".join(config.ALLOWED_NAME_PREFIXES)
         )
 
-    if config.ALLOWED_REGISTRIES and not any(
-        spec.image.startswith(r) for r in config.ALLOWED_REGISTRIES
-    ):
+    if not _registry_allowed(spec.image):
         raise ForbiddenSpec(
             "Image:n måste komma från ett tillåtet registry/repo: "
             + ", ".join(config.ALLOWED_REGISTRIES)
         )
+
+    if spec.privileged and not config.ALLOW_PRIVILEGED:
+        raise ForbiddenSpec(
+            "Privilegierade containrar är avstängda (ger i praktiken root på "
+            "hosten). Sätt ALLOW_PRIVILEGED=true för att tillåta."
+        )
+
+    for v in spec.volumes:
+        host = v.host.rstrip("/") or "/"
+        if host == "/" or _under(host, config.DENIED_VOLUME_PREFIXES):
+            raise ForbiddenSpec(f"Volym-host '{v.host}' är i en nekad systemkatalog.")
+        if not _under(host, config.ALLOWED_VOLUME_PREFIXES):
+            raise ForbiddenSpec(
+                f"Volym-host '{v.host}' är utanför tillåtna prefix: "
+                + ", ".join(config.ALLOWED_VOLUME_PREFIXES)
+            )
+
+    for d in spec.devices:
+        dev = d.split(":", 1)[0]
+        if not config.ALLOWED_DEVICE_PREFIXES or not _under(
+            dev, config.ALLOWED_DEVICE_PREFIXES
+        ):
+            raise ForbiddenSpec(
+                f"Device '{d}' är inte tillåten (sätt ALLOWED_DEVICE_PREFIXES)."
+            )
 
     # Exakt namnkrock (filter är substring, så verifiera exakt).
     try:
@@ -82,7 +129,7 @@ def create_container(spec: ContainerSpec, client: docker.DockerClient) -> Create
         client.images.pull(repo, tag=tag)
     except (ImageNotFound, NotFound):
         raise DockerBackendError(f"Image hittades inte: {spec.image}")
-    except APIError as e:
+    except (APIError, *_TRANSPORT_ERRORS) as e:
         raise DockerBackendError(f"Kunde inte pulla image {spec.image}: {e}")
 
     restart = spec.restart or config.DEFAULT_RESTART
@@ -102,12 +149,17 @@ def create_container(spec: ContainerSpec, client: docker.DockerClient) -> Create
             restart_policy={"Name": restart},
         )
     except APIError as e:
+        # Race: någon hann skapa samma namn mellan kontroll och create.
+        if e.response is not None and e.response.status_code == 409:
+            raise ConflictError(f"En container med namnet '{spec.name}' finns redan.")
+        raise DockerBackendError(f"Kunde inte skapa container: {e}")
+    except _TRANSPORT_ERRORS as e:
         raise DockerBackendError(f"Kunde inte skapa container: {e}")
 
     if spec.autostart:
         try:
             container.start()
-        except APIError as e:
+        except (APIError, *_TRANSPORT_ERRORS) as e:
             warnings.append(f"Container skapad men kunde inte startas: {e}")
 
     try:

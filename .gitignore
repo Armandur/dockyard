@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+dev.log
+tmp/
+tmp/gemini/
+.pytest_cache/
+*.egg-info/

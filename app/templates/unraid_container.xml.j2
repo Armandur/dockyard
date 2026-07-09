@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>{{ name }}</Name>
+  <Repository>{{ image }}</Repository>
+  <Registry>{{ registry }}</Registry>
+  <Network>{{ network }}</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>{{ 'true' if privileged else 'false' }}</Privileged>
+  <Support>{{ support }}</Support>
+  <Project>{{ project }}</Project>
+  <Overview>{{ overview }}</Overview>
+  <Category>{{ category }}</Category>
+  <WebUI>{{ webui }}</WebUI>
+  <TemplateURL/>
+  <Icon>{{ icon }}</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled>{{ date_installed }}</DateInstalled>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="{{ managed_label }}" Target="{{ managed_label }}" Default="true" Mode="" Description="Skapad av dockyard" Type="Label" Display="advanced" Required="false" Mask="false">true</Config>
+{% for c in configs %}
+  <Config Name="{{ c.name }}" Target="{{ c.target }}" Default="{{ c.default }}" Mode="{{ c.mode }}" Description="{{ c.description }}" Type="{{ c.type }}" Display="always" Required="{{ c.required }}" Mask="false">{{ c.value }}</Config>
+{% endfor %}</Container>

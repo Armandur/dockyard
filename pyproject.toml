@@ -1,0 +1,21 @@
+[project]
+name = "dockyard"
+version = "0.1.0"
+description = "Tunn create-shim för containrar på Unraid (FastAPI + docker-socket-proxy + Unraid-template)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "docker>=7.1",
+    "jinja2>=3.1",
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27",
+    "pytest>=8.0",
+]
+
+[tool.uv]
+package = false

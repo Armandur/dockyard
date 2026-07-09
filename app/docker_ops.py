@@ -1,0 +1,141 @@
+"""Skapa-logik mot Docker-motorn (via socket-proxyn)."""
+import logging
+
+import docker
+from docker.errors import APIError, ImageNotFound, NotFound
+
+from . import config, template
+from .errors import ConflictError, DockerBackendError, ForbiddenSpec
+from .schemas import ContainerSpec, CreateResult
+
+log = logging.getLogger("dockyard")
+
+
+def _split_ref(ref: str) -> tuple[str, str]:
+    """Dela 'host:port/repo:tag' i (repo, tag). Digest hanteras separat."""
+    if "@" in ref:
+        repo, _, digest = ref.partition("@")
+        return repo, digest
+    last_slash = ref.rfind("/")
+    last_colon = ref.rfind(":")
+    if last_colon > last_slash:
+        return ref[:last_colon], ref[last_colon + 1:]
+    return ref, "latest"
+
+
+def _check_guardrails(spec: ContainerSpec, client: docker.DockerClient) -> None:
+    if spec.name in config.PROTECTED_NAMES:
+        raise ForbiddenSpec(f"Namnet '{spec.name}' är skyddat och får inte skapas.")
+
+    if config.ALLOWED_NAME_PREFIXES and not any(
+        spec.name.startswith(p) for p in config.ALLOWED_NAME_PREFIXES
+    ):
+        raise ForbiddenSpec(
+            "Containernamnet måste börja med ett tillåtet prefix: "
+            + ", ".join(config.ALLOWED_NAME_PREFIXES)
+        )
+
+    if config.ALLOWED_REGISTRIES and not any(
+        spec.image.startswith(r) for r in config.ALLOWED_REGISTRIES
+    ):
+        raise ForbiddenSpec(
+            "Image:n måste komma från ett tillåtet registry/repo: "
+            + ", ".join(config.ALLOWED_REGISTRIES)
+        )
+
+    # Exakt namnkrock (filter är substring, så verifiera exakt).
+    try:
+        existing = client.containers.list(all=True, filters={"name": spec.name})
+    except APIError as e:
+        raise DockerBackendError(f"Kunde inte kontrollera befintliga containrar: {e}")
+    for c in existing:
+        if c.name == spec.name:
+            raise ConflictError(f"En container med namnet '{spec.name}' finns redan.")
+
+
+def _labels(spec: ContainerSpec) -> dict[str, str]:
+    labels = dict(spec.labels)
+    labels[config.MANAGED_LABEL] = "true"
+    labels["net.unraid.docker.managed"] = "dockerman"
+    if spec.webui:
+        labels["net.unraid.docker.webui"] = spec.webui
+    if spec.icon:
+        labels["net.unraid.docker.icon"] = spec.icon
+    return labels
+
+
+def _ports(spec: ContainerSpec) -> dict[str, int]:
+    return {f"{p.container}/{p.proto}": p.host for p in spec.ports}
+
+
+def _volumes(spec: ContainerSpec) -> dict[str, dict]:
+    return {v.host: {"bind": v.container, "mode": v.mode} for v in spec.volumes}
+
+
+def create_container(spec: ContainerSpec, client: docker.DockerClient) -> CreateResult:
+    _check_guardrails(spec, client)
+    warnings: list[str] = []
+
+    repo, tag = _split_ref(spec.image)
+    log.info("Pullar image %s:%s", repo, tag)
+    try:
+        client.images.pull(repo, tag=tag)
+    except (ImageNotFound, NotFound):
+        raise DockerBackendError(f"Image hittades inte: {spec.image}")
+    except APIError as e:
+        raise DockerBackendError(f"Kunde inte pulla image {spec.image}: {e}")
+
+    restart = spec.restart or config.DEFAULT_RESTART
+    log.info("Skapar container %s (%s)", spec.name, spec.image)
+    try:
+        container = client.containers.create(
+            image=spec.image,
+            name=spec.name,
+            detach=True,
+            network=spec.network,
+            ports=_ports(spec),
+            volumes=_volumes(spec),
+            environment=spec.env,
+            labels=_labels(spec),
+            devices=spec.devices,
+            privileged=spec.privileged,
+            restart_policy={"Name": restart},
+        )
+    except APIError as e:
+        raise DockerBackendError(f"Kunde inte skapa container: {e}")
+
+    if spec.autostart:
+        try:
+            container.start()
+        except APIError as e:
+            warnings.append(f"Container skapad men kunde inte startas: {e}")
+
+    try:
+        container.reload()
+        state = container.status
+    except APIError:
+        state = "unknown"
+
+    template_written: str | None = None
+    if config.WRITE_TEMPLATE:
+        try:
+            template_written = template.write(spec)
+        except OSError as e:
+            warnings.append(f"Container skapad men template-XML kunde inte skrivas: {e}")
+
+    return CreateResult(
+        ok=True,
+        name=spec.name,
+        container_id=container.id,
+        image=spec.image,
+        state=state,
+        template_written=template_written,
+        warnings=warnings,
+    )
+
+
+def ping(client: docker.DockerClient) -> bool:
+    try:
+        return bool(client.ping())
+    except Exception:
+        return False

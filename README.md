@@ -1,14 +1,38 @@
 # dockyard
 
-Tunn create-shim för att skapa containrar på Unraid (TERVO2) via ett avgränsat
-HTTP-API, i stället för root-SSH eller en öppen Docker-socket.
+Tunn shim för att skapa och ändra containrar på Unraid (TERVO2) via ett
+avgränsat HTTP-API, i stället för root-SSH eller en öppen Docker-socket.
 
 - **Skapar** containrar via Docker-motorn, bakom en **docker-socket-proxy**
   (minsta rättigheter).
+- **Ändrar** befintliga containrar med `PATCH` genom att bygga om dem, eftersom
+  Docker inte kan ändra env, portar eller volymer i efterhand.
 - Skriver en matchande **Unraid-template** (`my-<Namn>.xml`) så containern blir
   förstklassig i GUI:t (ikon, WebUI-länk, update, edit).
-- **Create-only.** Start/stopp/update/remove sköts av Unraids inbyggda
-  GraphQL-API. Ingen remove-yta här.
+- **Ingen fristående remove-yta.** Start/stopp/update sköts av Unraids inbyggda
+  GraphQL-API. Borttagning finns bara inuti en ombyggnad, och bara på containrar
+  dockyard själv skapat.
+
+## Ändra en container
+
+```bash
+curl -s -X PATCH "$DOCKYARD_URL/containers/minapp" \
+  -H "x-api-key: $DOCKYARD_API_KEY" -H "Content-Type: application/json" \
+  -d '{"env": {"NY_VARIABEL": "värde"}}'
+```
+
+`env` slås ihop med de befintliga variablerna, så man kan lägga till utan att
+känna till resten; `env_remove: ["NAMN"]` tar bort. Listfälten `ports`,
+`volumes`, `labels` och `devices` ersätter sina motsvarigheter i sin helhet.
+
+Containern byggs om (tas bort och skapas på nytt) eftersom Docker inte kan
+ändra env, portar eller volymer i efterhand. Bind-monterade volymer ligger kvar
+på hosten och följer med. En container som körde startas igen, en stoppad
+lämnas stoppad.
+
+Gäller bara containrar dockyard själv skapat (`dockyard.managed=true`). Allt som
+kan neka ändringen körs innan den gamla containern rivs, och misslyckas
+skapandet ändå görs ett försök att återställa den gamla konfigurationen.
 
 ## Varför
 Unraids GraphQL-API kan styra befintliga containrar men har **ingen

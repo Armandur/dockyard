@@ -37,6 +37,8 @@ services:
       # Lokalt testar vi utan template-skrivning (ingen /boot på VM:en).
       WRITE_TEMPLATE: "false"
       ALLOWED_NAME_PREFIXES: ${ALLOWED_NAME_PREFIXES:-dockyard-test-}
+      # Lokalt finns ingen /mnt/user - peka om så volymfall går att testa.
+      ALLOWED_VOLUME_PREFIXES: ${ALLOWED_VOLUME_PREFIXES:-/mnt/user/}
     ports:
       - "${HOST_PORT:-8001}:8000"
     restart: unless-stopped

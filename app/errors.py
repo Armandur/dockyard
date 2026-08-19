@@ -27,3 +27,8 @@ class ConflictError(DockyardError):
 class DockerBackendError(DockyardError):
     """Fel från Docker-motorn/proxyn."""
     status_code = 502
+
+
+class NotFoundError(DockyardError):
+    """Containern som skulle ändras finns inte."""
+    status_code = 404

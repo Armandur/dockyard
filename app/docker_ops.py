@@ -11,6 +11,9 @@ from .schemas import ContainerSpec, CreateResult
 
 log = logging.getLogger("dockyard")
 
+# Label där hela specen sparas, se _labels().
+SPEC_LABEL = "dockyard.spec"
+
 # Transportfel från docker-SDK:t (requests) som inte ärver APIError.
 _TRANSPORT_ERRORS = (requests.exceptions.RequestException, OSError)
 
@@ -47,7 +50,17 @@ def _split_ref(ref: str) -> tuple[str, str]:
     return ref, "latest"
 
 
-def _check_guardrails(spec: ContainerSpec, client: docker.DockerClient) -> None:
+def _check_guardrails_for_patch(spec: ContainerSpec, client: docker.DockerClient,
+                                ignore_name: str | None = None) -> None:
+    """Samma spärrar som vid create, men utan namnkrock-kontrollen.
+
+    Vid en ombyggnad finns containern med samma namn redan - det är hela
+    poängen - så den kontrollen skulle alltid slå till.
+    """
+    _check_spec_guardrails(spec)
+
+
+def _check_spec_guardrails(spec: ContainerSpec) -> None:
     if spec.name in config.PROTECTED_NAMES:
         raise ForbiddenSpec(f"Namnet '{spec.name}' är skyddat och får inte skapas.")
 
@@ -90,6 +103,10 @@ def _check_guardrails(spec: ContainerSpec, client: docker.DockerClient) -> None:
                 f"Device '{d}' är inte tillåten (sätt ALLOWED_DEVICE_PREFIXES)."
             )
 
+
+def _check_guardrails(spec: ContainerSpec, client: docker.DockerClient) -> None:
+    _check_spec_guardrails(spec)
+
     # Exakt namnkrock (filter är substring, så verifiera exakt).
     try:
         existing = client.containers.list(all=True, filters={"name": spec.name})
@@ -103,6 +120,10 @@ def _check_guardrails(spec: ContainerSpec, client: docker.DockerClient) -> None:
 def _labels(spec: ContainerSpec) -> dict[str, str]:
     labels = dict(spec.labels)
     labels[config.MANAGED_LABEL] = "true"
+    # Hela specen sparas som label. En PATCH kan då bygga om containern exakt
+    # som den skapades, i stället för att gissa sig till den ur docker inspect
+    # (där image-defaults och template-metadata inte går att skilja ut).
+    labels[SPEC_LABEL] = spec.model_dump_json(exclude_defaults=True)
     labels["net.unraid.docker.managed"] = "dockerman"
     if spec.webui:
         labels["net.unraid.docker.webui"] = spec.webui

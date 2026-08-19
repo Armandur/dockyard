@@ -20,12 +20,13 @@ app/
   schemas.py         # ContainerSpec, PortMapping, VolumeMapping, CreateResult
   errors.py          # DockyardError-hierarki (status_code + svenskt meddelande)
   docker_ops.py      # create_container(): guardrails -> pull -> create -> start -> template
+  patch_ops.py       # patch_container(): läs spec -> merge -> guardrails -> pull -> recreate
   template.py        # render/write Unraid-XML från spec
   templates/
     unraid_container.xml.j2
   routes/
     health.py        # GET /health (docker-ping)
-    containers.py    # POST /containers (create, nyckelskyddad + rate limit)
+    containers.py    # POST /containers (create) + PATCH /containers/{name} (ändra)
 ```
 
 ## Designbeslut
@@ -34,7 +35,20 @@ app/
 - **Förstklassig i Unraid**: matchande `my-<Name>.xml` i templates-user +
   label `net.unraid.docker.managed=dockerman` gör att GUI:t associerar den
   körande containern med en template (ikon/WebUI/update/edit).
-- **Create-only** medvetet - remove/stop hålls utanför för minimal attackyta.
+- **Create + patch, aldrig fristående remove.** Docker kan inte ändra env,
+  portar eller volymer i efterhand, så PATCH bygger om containern (ta bort +
+  skapa). Borttagningen finns bara inuti den operationen och bara på containrar
+  som bär `dockyard.managed=true` - en öppen remove-endpoint vore en
+  raderingsprimitiv och hålls utanför.
+- **Patch validerar allt före rivningen.** Guardrails och image-pull körs medan
+  den gamla containern fortfarande står; misslyckas skapandet ändå försöker
+  patch_ops återställa den gamla specen. Ordningen är hela poängen - kasta inte
+  om den.
+- **Specen sparas som label** (`dockyard.spec`) vid create, så en senare patch
+  bygger om containern exakt. Saknas labeln härleds specen ur `docker inspect`,
+  och då filtreras imagens egna env och labels bort så de inte permanentas som
+  användarens. Template-metadata (overview/project/category) går inte att
+  härleda och svaret varnar om det.
 - **Fail-closed**: `config.validate()` kräver API_KEY (>=16 tecken) vid start.
 - **Host-eskalering spärrad by default:** `privileged` nekas utan
   `ALLOW_PRIVILEGED`; volymer bara under `ALLOWED_VOLUME_PREFIXES`

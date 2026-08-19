@@ -174,6 +174,14 @@ def _check_patchable(container, name: str) -> None:
 
 
 def _create_and_start(spec: ContainerSpec, client: docker.DockerClient):
+    """Skapar containern och startar den. Returnerar (container, warnings).
+
+    Start-felet hålls isär från create-felet med flit: Docker validerar host-
+    portbindningar först vid start, så en upptagen port ger en container som
+    finns men inte kör. Läcker det felet uppåt försöker anroparen "återställa"
+    under ett namn som redan är taget, och rapporterar att containern är borta
+    fast den står där.
+    """
     container = client.containers.create(
         image=spec.image,
         name=spec.name,
@@ -187,9 +195,13 @@ def _create_and_start(spec: ContainerSpec, client: docker.DockerClient):
         privileged=spec.privileged,
         restart_policy={"Name": spec.restart or config.DEFAULT_RESTART},
     )
+    warnings: list[str] = []
     if spec.autostart:
-        container.start()
-    return container
+        try:
+            container.start()
+        except (APIError, *_TRANSPORT_ERRORS) as e:
+            warnings.append(f"Containern byggdes om men kunde inte startas: {e}")
+    return container, warnings
 
 
 def patch_container(name: str, patch: ContainerPatch,
@@ -208,7 +220,7 @@ def patch_container(name: str, patch: ContainerPatch,
         raise SpecError("Patchen innehöll inga fält att ändra.")
 
     # Allt som kan neka ändringen ska göra det INNAN den gamla containern rörs.
-    docker_ops._check_guardrails_for_patch(new_spec, client, ignore_name=name)
+    docker_ops._check_guardrails_for_patch(new_spec)
 
     repo, tag = docker_ops._split_ref(new_spec.image)
     log.info("Pullar image %s:%s inför ombyggnad av %s", repo, tag, name)
@@ -228,7 +240,8 @@ def patch_container(name: str, patch: ContainerPatch,
         )
 
     try:
-        new_container = _create_and_start(new_spec, client)
+        new_container, start_warnings = _create_and_start(new_spec, client)
+        warnings.extend(start_warnings)
     except (APIError, *_TRANSPORT_ERRORS) as e:
         # Den gamla är borta. Försök sätta tillbaka den så hosten inte blir
         # stående utan tjänst på grund av en avvisad ändring.

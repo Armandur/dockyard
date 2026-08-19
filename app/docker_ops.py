@@ -50,8 +50,7 @@ def _split_ref(ref: str) -> tuple[str, str]:
     return ref, "latest"
 
 
-def _check_guardrails_for_patch(spec: ContainerSpec, client: docker.DockerClient,
-                                ignore_name: str | None = None) -> None:
+def _check_guardrails_for_patch(spec: ContainerSpec) -> None:
     """Samma spärrar som vid create, men utan namnkrock-kontrollen.
 
     Vid en ombyggnad finns containern med samma namn redan - det är hela

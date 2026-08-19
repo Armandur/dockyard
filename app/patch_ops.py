@@ -222,14 +222,29 @@ def patch_container(name: str, patch: ContainerPatch,
     # Allt som kan neka ändringen ska göra det INNAN den gamla containern rörs.
     docker_ops._check_guardrails_for_patch(new_spec)
 
-    repo, tag = docker_ops._split_ref(new_spec.image)
-    log.info("Pullar image %s:%s inför ombyggnad av %s", repo, tag, name)
-    try:
-        client.images.pull(repo, tag=tag)
-    except (ImageNotFound, NotFound):
-        raise DockerBackendError(f"Image hittades inte: {new_spec.image}")
-    except (APIError, *_TRANSPORT_ERRORS) as e:
-        raise DockerBackendError(f"Kunde inte pulla image {new_spec.image}: {e}")
+    # Pulla BARA när image:n faktiskt byts. En env-ändring ska inte dra ner
+    # en ny latest och uppgradera containern i smyg - och för ett privat
+    # registry skulle pullen dessutom faila fast imagen redan finns lokalt.
+    if patch.image is not None and patch.image != spec.image:
+        repo, tag = docker_ops._split_ref(new_spec.image)
+        log.info("Pullar image %s:%s inför ombyggnad av %s", repo, tag, name)
+        try:
+            client.images.pull(repo, tag=tag)
+        except (ImageNotFound, NotFound):
+            raise DockerBackendError(f"Image hittades inte: {new_spec.image}")
+        except (APIError, *_TRANSPORT_ERRORS) as e:
+            raise DockerBackendError(f"Kunde inte pulla image {new_spec.image}: {e}")
+    else:
+        # Imagen måste finnas lokalt, annars går containern inte att skapa igen.
+        try:
+            client.images.get(new_spec.image)
+        except (ImageNotFound, NotFound):
+            raise DockerBackendError(
+                f"Image {new_spec.image} finns inte lokalt. Skicka med \"image\" "
+                "i patchen för att hämta den."
+            )
+        except (APIError, *_TRANSPORT_ERRORS) as e:
+            raise DockerBackendError(f"Kunde inte slå upp image {new_spec.image}: {e}")
 
     log.info("Bygger om %s (ändrat: %s)", name, ", ".join(changed))
     try:

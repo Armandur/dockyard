@@ -25,6 +25,10 @@ curl -s -X PATCH "$DOCKYARD_URL/containers/minapp" \
 känna till resten; `env_remove: ["NAMN"]` tar bort. Listfälten `ports`,
 `volumes`, `labels` och `devices` ersätter sina motsvarigheter i sin helhet.
 
+Image:n pullas bara när `image` anges i patchen. En env-ändring hämtar alltså
+inte ner en ny `latest` och uppgraderar containern i smyg - imagen som redan
+ligger lokalt återanvänds.
+
 Containern byggs om (tas bort och skapas på nytt) eftersom Docker inte kan
 ändra env, portar eller volymer i efterhand. Bind-monterade volymer ligger kvar
 på hosten och följer med. En container som körde startas igen, en stoppad

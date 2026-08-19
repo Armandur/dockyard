@@ -40,6 +40,9 @@ app/
   skapa). Borttagningen finns bara inuti den operationen och bara på containrar
   som bär `dockyard.managed=true` - en öppen remove-endpoint vore en
   raderingsprimitiv och hålls utanför.
+- **Patch pullar bara när `image` anges.** Annars skulle en env-ändring dra ner
+  en ny `latest` och uppgradera containern i smyg, och mot ett privat registry
+  faila trots att imagen redan finns lokalt (se TASK-1185).
 - **Patch validerar allt före rivningen.** Guardrails och image-pull körs medan
   den gamla containern fortfarande står; misslyckas skapandet ändå försöker
   patch_ops återställa den gamla specen. Ordningen är hela poängen - kasta inte

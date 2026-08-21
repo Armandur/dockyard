@@ -1,8 +1,9 @@
 # dockyard - kodbasbeskrivning för Claude
 
-Tunn FastAPI-shim som skapar containrar på Unraid (TERVO2) via Docker-motorn
-bakom en docker-socket-proxy, och skriver matchande Unraid-template-XML.
-Create-only; livscykel sköts av Unraids GraphQL-API.
+Tunn FastAPI-shim som skapar, läser och ändrar containrar på Unraid (TERVO2)
+via Docker-motorn bakom en docker-socket-proxy, och skriver matchande
+Unraid-template-XML. Skapa (POST), läsa spec (GET) och ändra (PATCH) görs här;
+start/stopp/remove sköts av Unraids GraphQL-API.
 
 ## Stack
 - Python 3.12 + FastAPI (uvicorn)
@@ -17,16 +18,16 @@ app/
   main.py            # app, lifespan (validate + docker-ping), exception handler, routers
   config.py          # env-config + guardrail-inställningar + validate()
   deps.py            # get_docker, require_api_key, rate_limit  (importeras härifrån)
-  schemas.py         # ContainerSpec, PortMapping, VolumeMapping, CreateResult
+  schemas.py         # ContainerSpec, ContainerPatch, PortMapping, VolumeMapping, CreateResult, ContainerSummary
   errors.py          # DockyardError-hierarki (status_code + svenskt meddelande)
   docker_ops.py      # create_container(): guardrails -> pull -> create -> start -> template
-  patch_ops.py       # patch_container(): läs spec -> merge -> guardrails -> pull -> recreate
+  patch_ops.py       # patch_container(): läs spec -> merge -> guardrails -> pull -> recreate; read_spec()/list_managed() för GET
   template.py        # render/write Unraid-XML från spec
   templates/
     unraid_container.xml.j2
   routes/
     health.py        # GET /health (docker-ping)
-    containers.py    # POST /containers (create) + PATCH /containers/{name} (ändra)
+    containers.py    # GET /containers (lista) + GET /containers/{name} (läs spec) + POST (create) + PATCH /containers/{name} (ändra)
 ```
 
 ## Designbeslut

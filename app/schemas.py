@@ -1,5 +1,6 @@
 """Pydantic-scheman för create-API:t."""
 import re
+
 from pydantic import BaseModel, Field, field_validator
 
 # Docker-container-namn: [a-zA-Z0-9][a-zA-Z0-9_.-]+
@@ -150,3 +151,10 @@ class CreateResult(BaseModel):
     state: str
     template_written: str | None = None
     warnings: list[str] = []
+
+
+class ContainerSummary(BaseModel):
+    """En rad i GET /containers - de containrar dockyard hanterar."""
+    name: str
+    image: str
+    state: str

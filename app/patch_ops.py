@@ -14,9 +14,16 @@ import docker
 from docker.errors import APIError, ImageNotFound, NotFound
 
 from . import config, docker_ops, template
-from .docker_ops import SPEC_LABEL, _TRANSPORT_ERRORS
+from .docker_ops import _TRANSPORT_ERRORS, SPEC_LABEL
 from .errors import DockerBackendError, ForbiddenSpec, NotFoundError, SpecError
-from .schemas import ContainerPatch, ContainerSpec, PatchResult, PortMapping, VolumeMapping
+from .schemas import (
+    ContainerPatch,
+    ContainerSpec,
+    ContainerSummary,
+    PatchResult,
+    PortMapping,
+    VolumeMapping,
+)
 
 log = logging.getLogger("dockyard")
 
@@ -156,6 +163,12 @@ def merge(spec: ContainerSpec, patch: ContainerPatch) -> ContainerSpec:
     return ContainerSpec(**data)
 
 
+def _managad(container) -> bool:
+    """Bär containern dockyards managed-label? Delad ägarkoll för patch och läs."""
+    labels = container.attrs.get("Config", {}).get("Labels") or {}
+    return labels.get(config.MANAGED_LABEL) == "true"
+
+
 def _check_patchable(container, name: str) -> None:
     """Bara containrar dockyard själv skapat får byggas om.
 
@@ -164,13 +177,54 @@ def _check_patchable(container, name: str) -> None:
     """
     if name in config.PROTECTED_NAMES:
         raise ForbiddenSpec(f"Namnet '{name}' är skyddat och får inte ändras.")
-    labels = container.attrs.get("Config", {}).get("Labels") or {}
-    if labels.get(config.MANAGED_LABEL) != "true":
+    if not _managad(container):
         raise ForbiddenSpec(
             f"Containern '{name}' är inte skapad av dockyard och byggs inte om. "
             "Ombyggnaden tar bort och återskapar containern, och det görs bara "
             "på containrar dockyard äger."
         )
+
+
+def read_spec(name: str, client: docker.DockerClient) -> ContainerSpec:
+    """Läs ut en dockyard-containers spec i samma form som POST/PATCH tar emot.
+
+    Round-trip: svaret kan modifieras och PATCH:as tillbaka rakt av. Samma
+    ägarkoll som patch - en container dockyard inte äger ger 403, annars vore
+    endpointen ett sätt att läsa env (och därmed hemligheter) ur vad som helst
+    på hosten. env returneras i klartext med flit: anroparen har redan full
+    kontroll via samma API-nyckel (create/patch), och att se nuvarande env är
+    hela poängen med att kunna round-trippa en ändring.
+    """
+    container = _find(name, client)
+    if name in config.PROTECTED_NAMES:
+        raise ForbiddenSpec(f"Namnet '{name}' är skyddat och läses inte ut.")
+    if not _managad(container):
+        raise ForbiddenSpec(
+            f"Containern '{name}' är inte skapad av dockyard och läses inte ut."
+        )
+    spec, warnings = current_spec(container, client)
+    for w in warnings:
+        log.warning("read_spec(%s): %s", name, w)
+    return spec
+
+
+def list_managed(client: docker.DockerClient) -> list[ContainerSummary]:
+    """De containrar dockyard hanterar (managed-label), namn/image/state."""
+    try:
+        containers = client.containers.list(
+            all=True, filters={"label": f"{config.MANAGED_LABEL}=true"}
+        )
+    except (APIError, *_TRANSPORT_ERRORS) as e:
+        raise DockerBackendError(f"Kunde inte lista containrar: {e}")
+    out = [
+        ContainerSummary(
+            name=c.name,
+            image=c.attrs.get("Config", {}).get("Image") or "",
+            state=c.status,
+        )
+        for c in containers
+    ]
+    return sorted(out, key=lambda s: s.name)
 
 
 def _create_and_start(spec: ContainerSpec, client: docker.DockerClient):

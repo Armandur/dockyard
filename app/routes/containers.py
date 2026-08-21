@@ -1,14 +1,37 @@
-"""Endpoints för att skapa och ändra containrar."""
+"""Endpoints för att skapa, läsa och ändra containrar."""
 from fastapi import APIRouter, Depends
 
 from .. import docker_ops, patch_ops
 from ..deps import get_docker, rate_limit, require_api_key
-from ..schemas import ContainerPatch, ContainerSpec, CreateResult, PatchResult
+from ..schemas import (
+    ContainerPatch,
+    ContainerSpec,
+    ContainerSummary,
+    CreateResult,
+    PatchResult,
+)
 
 router = APIRouter(
     prefix="/containers",
     dependencies=[Depends(require_api_key)],
 )
+
+
+@router.get("", response_model=list[ContainerSummary])
+def lista(client=Depends(get_docker)):
+    """Lista de containrar dockyard hanterar (managed-label)."""
+    return patch_ops.list_managed(client)
+
+
+@router.get("/{name}", response_model=ContainerSpec)
+def las(name: str, client=Depends(get_docker)):
+    """Läs ut en dockyard-containers spec i POST/PATCH-form (round-trip).
+
+    Gäller bara containrar dockyard äger - annars 403, så endpointen inte blir
+    ett sätt att läsa env ur vilken container som helst. env returneras i
+    klartext med flit; se read_spec.
+    """
+    return patch_ops.read_spec(name, client)
 
 
 @router.post("", response_model=CreateResult, status_code=201)

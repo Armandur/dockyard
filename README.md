@@ -7,11 +7,28 @@ avgränsat HTTP-API, i stället för root-SSH eller en öppen Docker-socket.
   (minsta rättigheter).
 - **Ändrar** befintliga containrar med `PATCH` genom att bygga om dem, eftersom
   Docker inte kan ändra env, portar eller volymer i efterhand.
+- **Läser** en containers spec med `GET` i samma form som create/patch tar emot,
+  så en ändring kan round-trippas.
 - Skriver en matchande **Unraid-template** (`my-<Namn>.xml`) så containern blir
   förstklassig i GUI:t (ikon, WebUI-länk, update, edit).
 - **Ingen fristående remove-yta.** Start/stopp/update sköts av Unraids inbyggda
   GraphQL-API. Borttagning finns bara inuti en ombyggnad, och bara på containrar
   dockyard själv skapat.
+
+## Läsa en containers spec
+
+```bash
+curl -s "$DOCKYARD_URL/containers/minapp" -H "x-api-key: $DOCKYARD_API_KEY"
+```
+
+Svaret är specen i samma form som `POST`/`PATCH` tar emot, så den kan
+modifieras och skickas tillbaka rakt av - praktiskt eftersom listfälten
+`ports`/`volumes`/`labels`/`devices` ersätter hela listan i en patch, och man
+då behöver den nuvarande uppsättningen. `GET /containers` listar de containrar
+dockyard hanterar (namn, image, state). Bara dockyard-ägda containrar kan
+läsas (annars `403`) - endpointen ska inte gå att använda för att läsa env ur
+vad som helst på hosten. `env` returneras i klartext: anroparen har redan full
+kontroll via samma nyckel, och round-trip kräver att nuvarande env syns.
 
 ## Ändra en container
 
@@ -23,7 +40,9 @@ curl -s -X PATCH "$DOCKYARD_URL/containers/minapp" \
 
 `env` slås ihop med de befintliga variablerna, så man kan lägga till utan att
 känna till resten; `env_remove: ["NAMN"]` tar bort. Listfälten `ports`,
-`volumes`, `labels` och `devices` ersätter sina motsvarigheter i sin helhet.
+`volumes`, `labels` och `devices` ersätter sina motsvarigheter i sin helhet -
+läs nuvarande spec med `GET /containers/<namn>` först om du bara vill ändra en
+post i en lista.
 
 Image:n pullas bara när `image` anges i patchen. En env-ändring hämtar alltså
 inte ner en ny `latest` och uppgraderar containern i smyg - imagen som redan
@@ -63,6 +82,10 @@ Svar `201`:
 { "ok": true, "name": "minapp", "container_id": "…", "image": "…",
   "state": "running", "template_written": "/templates-user/my-minapp.xml", "warnings": [] }
 ```
+
+`GET /containers` - lista dockyard-hanterade containrar (namn, image, state).
+`GET /containers/{name}` - läs ut specen i POST/PATCH-form (bara dockyard-ägda,
+annars `403`).
 
 `GET /health` - status + om socket-proxyn svarar (ingen nyckel krävs).
 

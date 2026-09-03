@@ -9,11 +9,12 @@ avgränsat HTTP-API, i stället för root-SSH eller en öppen Docker-socket.
   Docker inte kan ändra env, portar eller volymer i efterhand.
 - **Läser** en containers spec med `GET` i samma form som create/patch tar emot,
   så en ändring kan round-trippas.
+- **Startar** en befintlig dockyard-ägd container med en idempotent `POST`.
 - Skriver en matchande **Unraid-template** (`my-<Namn>.xml`) så containern blir
   förstklassig i GUI:t (ikon, WebUI-länk, update, edit).
-- **Ingen fristående remove-yta.** Start/stopp/update sköts av Unraids inbyggda
-  GraphQL-API. Borttagning finns bara inuti en ombyggnad, och bara på containrar
-  dockyard själv skapat.
+- **Ingen fristående stop- eller remove-yta.** Start finns som egen dockyard-route;
+  stopp/update sköts av Unraids inbyggda GraphQL-API. Borttagning finns bara
+  inuti en ombyggnad, och bara på containrar dockyard själv skapat.
 
 ## Läsa en containers spec
 
@@ -86,6 +87,9 @@ Svar `201`:
 `GET /containers` - lista dockyard-hanterade containrar (namn, image, state).
 `GET /containers/{name}` - läs ut specen i POST/PATCH-form (bara dockyard-ägda,
 annars `403`).
+`POST /containers/{name}/start` - starta en dockyard-ägd container. Anropet är
+idempotent och svarar `200` med `{"ok": true, "name": "...", "state":
+"running"}` även om containern redan kör.
 
 `GET /health` - status + om socket-proxyn svarar (ingen nyckel krävs).
 

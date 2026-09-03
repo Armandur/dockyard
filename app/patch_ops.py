@@ -22,6 +22,7 @@ from .schemas import (
     ContainerSummary,
     PatchResult,
     PortMapping,
+    StartResult,
     VolumeMapping,
 )
 
@@ -225,6 +226,21 @@ def list_managed(client: docker.DockerClient) -> list[ContainerSummary]:
         for c in containers
     ]
     return sorted(out, key=lambda s: s.name)
+
+
+def start_container(name: str, client: docker.DockerClient) -> StartResult:
+    """Starta en stoppad dockyard-ägd container, eller svara direkt om den kör."""
+    container = _find(name, client)
+    _check_patchable(container, name)
+    if container.status == "running":
+        return StartResult(ok=True, name=name, state="running")
+
+    try:
+        container.start()
+        container.reload()
+    except (APIError, *_TRANSPORT_ERRORS) as e:
+        raise DockerBackendError(f"Kunde inte starta containern '{name}': {e}")
+    return StartResult(ok=True, name=name, state=container.status)
 
 
 def _create_and_start(spec: ContainerSpec, client: docker.DockerClient):

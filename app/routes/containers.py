@@ -1,4 +1,4 @@
-"""Endpoints för att skapa, läsa och ändra containrar."""
+"""Endpoints för att skapa, läsa, ändra och starta containrar."""
 from fastapi import APIRouter, Depends
 
 from .. import docker_ops, patch_ops
@@ -9,6 +9,7 @@ from ..schemas import (
     ContainerSummary,
     CreateResult,
     PatchResult,
+    StartResult,
 )
 
 router = APIRouter(
@@ -55,3 +56,13 @@ def patch(name: str, patch: ContainerPatch, _rl=Depends(rate_limit),
     dockyard själv skapat. Sync def av samma skäl som create.
     """
     return patch_ops.patch_container(name, patch, client)
+
+
+@router.post("/{name}/start", response_model=StartResult)
+def start(name: str, _rl=Depends(rate_limit), client=Depends(get_docker)):
+    """Starta en stoppad dockyard-ägd container.
+
+    Anropet är idempotent: en container som redan kör lämnas orörd. Sync def
+    med flit eftersom docker-SDK:t är blockerande och ska köras i threadpool.
+    """
+    return patch_ops.start_container(name, client)

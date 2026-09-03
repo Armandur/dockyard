@@ -153,6 +153,12 @@ class CreateResult(BaseModel):
     warnings: list[str] = []
 
 
+class StartResult(BaseModel):
+    ok: bool
+    name: str
+    state: str
+
+
 class ContainerSummary(BaseModel):
     """En rad i GET /containers - de containrar dockyard hanterar."""
     name: str

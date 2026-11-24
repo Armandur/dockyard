@@ -67,6 +67,7 @@ def render(spec: ContainerSpec) -> str:
         registry=_registry(spec.image),
         network=spec.network,
         privileged=spec.privileged,
+        runtime=spec.runtime,
         support=spec.support or "",
         project=spec.project or "",
         overview=spec.overview or "",

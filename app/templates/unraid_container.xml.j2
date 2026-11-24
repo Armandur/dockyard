@@ -14,7 +14,11 @@
   <WebUI>{{ webui }}</WebUI>
   <TemplateURL/>
   <Icon>{{ icon }}</Icon>
+{% if runtime %}
+  <ExtraParams>--runtime={{ runtime }}</ExtraParams>
+{% else %}
   <ExtraParams/>
+{% endif %}
   <PostArgs/>
   <CPUset/>
   <DateInstalled>{{ date_installed }}</DateInstalled>

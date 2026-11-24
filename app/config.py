@@ -54,6 +54,7 @@ DENIED_VOLUME_PREFIXES = _csv("DENIED_VOLUME_PREFIXES") or [
 
 # Devices: default-deny. Tom lista => inga devices får mappas alls.
 ALLOWED_DEVICE_PREFIXES = _csv("ALLOWED_DEVICE_PREFIXES")
+ALLOWED_RUNTIMES = set(_csv("ALLOWED_RUNTIMES"))
 
 # Privilegierade containrar: default-deny (ger i praktiken root på hosten).
 ALLOW_PRIVILEGED = _bool("ALLOW_PRIVILEGED", False)

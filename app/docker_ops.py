@@ -32,8 +32,9 @@ def _under(path: str, prefixes: list[str]) -> bool:
 def _registry_allowed(image: str) -> bool:
     if not config.ALLOWED_REGISTRIES:
         return True
+    repository, _ = _split_ref(image)
     return any(
-        image == r or image.startswith(r.rstrip("/") + "/")
+        image == r or repository == r.rstrip("/") or image.startswith(r.rstrip("/") + "/")
         for r in config.ALLOWED_REGISTRIES
     )
 
@@ -81,6 +82,11 @@ def _check_spec_guardrails(spec: ContainerSpec) -> None:
         raise ForbiddenSpec(
             "Privilegierade containrar är avstängda (ger i praktiken root på "
             "hosten). Sätt ALLOW_PRIVILEGED=true för att tillåta."
+        )
+
+    if spec.runtime not in (None, "runc") and spec.runtime not in config.ALLOWED_RUNTIMES:
+        raise ForbiddenSpec(
+            f"Docker-runtime '{spec.runtime}' kräver tillstånd i ALLOWED_RUNTIMES."
         )
 
     for v in spec.volumes:
@@ -139,8 +145,37 @@ def _volumes(spec: ContainerSpec) -> dict[str, dict]:
     return {v.host: {"bind": v.container, "mode": v.mode} for v in spec.volumes}
 
 
+def _check_runtime(spec: ContainerSpec, client: docker.DockerClient) -> None:
+    if spec.runtime in (None, "runc"):
+        return
+    try:
+        runtimes = client.info().get("Runtimes") or {}
+    except (APIError, *_TRANSPORT_ERRORS) as e:
+        raise DockerBackendError(f"Kunde inte läsa tillgängliga Docker-runtimes: {e}")
+    if spec.runtime not in runtimes:
+        raise DockerBackendError(f"Docker på värden saknar runtime '{spec.runtime}'.")
+
+
+def _create_docker_container(spec: ContainerSpec, client: docker.DockerClient):
+    return client.containers.create(
+        image=spec.image,
+        name=spec.name,
+        detach=True,
+        network=spec.network,
+        ports=_ports(spec),
+        volumes=_volumes(spec),
+        environment=spec.env,
+        labels=_labels(spec),
+        devices=spec.devices,
+        privileged=spec.privileged,
+        restart_policy={"Name": spec.restart or config.DEFAULT_RESTART},
+        runtime=spec.runtime,
+    )
+
+
 def create_container(spec: ContainerSpec, client: docker.DockerClient) -> CreateResult:
     _check_guardrails(spec, client)
+    _check_runtime(spec, client)
     warnings: list[str] = []
 
     repo, tag = _split_ref(spec.image)
@@ -152,22 +187,9 @@ def create_container(spec: ContainerSpec, client: docker.DockerClient) -> Create
     except (APIError, *_TRANSPORT_ERRORS) as e:
         raise DockerBackendError(f"Kunde inte pulla image {spec.image}: {e}")
 
-    restart = spec.restart or config.DEFAULT_RESTART
     log.info("Skapar container %s (%s)", spec.name, spec.image)
     try:
-        container = client.containers.create(
-            image=spec.image,
-            name=spec.name,
-            detach=True,
-            network=spec.network,
-            ports=_ports(spec),
-            volumes=_volumes(spec),
-            environment=spec.env,
-            labels=_labels(spec),
-            devices=spec.devices,
-            privileged=spec.privileged,
-            restart_policy={"Name": restart},
-        )
+        container = _create_docker_container(spec, client)
     except APIError as e:
         # Race: någon hann skapa samma namn mellan kontroll och create.
         if e.response is not None and e.response.status_code == 409:

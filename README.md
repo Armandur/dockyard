@@ -93,6 +93,26 @@ idempotent och svarar `200` med `{"ok": true, "name": "...", "state":
 
 `GET /health` - status + om socket-proxyn svarar (ingen nyckel krävs).
 
+### NVIDIA-runtime
+
+Sätt `ALLOWED_RUNTIMES=nvidia` i Dockyards miljö och se till att Docker på
+värden har registrerat NVIDIA-runtime. Socket-proxyn behöver `INFO=1`.
+Ange följande fält tillsammans med övriga containerinställningar i POST eller PATCH.
+
+```json
+{
+  "runtime": "nvidia",
+  "env": {
+    "NVIDIA_VISIBLE_DEVICES": "0",
+    "NVIDIA_DRIVER_CAPABILITIES": "compute,video,utility"
+  }
+}
+```
+
+Dockyard sparar runtime även i Unraid-mallen. Om du utelämnar fältet vid POST
+väljer Docker standard-runtime. Vid PATCH behåller Dockyard det befintliga valet.
+Ange `"runtime": "runc"` om du vill återgå till runc.
+
 ### Guardrails
 Shimmen skapar containrar på en host - flera spärrar hindrar att en klient med
 giltig nyckel eskalerar till hosten:
@@ -103,7 +123,7 @@ giltig nyckel eskalerar till hosten:
   kataloger (`/boot`,`/etc`,`/root`,`/proc`,`/sys`,`/var/run`,`/run`,`/dev`) och
   `/` nekas alltid. Styrs av `ALLOWED_VOLUME_PREFIXES` / `DENIED_VOLUME_PREFIXES`.
 - **Devices default-deny:** inga får mappas utan `ALLOWED_DEVICE_PREFIXES`.
-- `ALLOWED_NAME_PREFIXES` / `ALLOWED_REGISTRIES` (matchas på `/`-gräns) /
+- `ALLOWED_NAME_PREFIXES` / `ALLOWED_REGISTRIES` (matchar namnrymd eller repo) /
   `PROTECTED_NAMES` låser namn och images.
 - Vägrar skapa om namnet redan finns (ingen clobbering), även vid race.
 - Rate limit på create. Allt stämplas med label `dockyard.managed=true`.
@@ -146,6 +166,7 @@ Publicera **ingen** port för proxyn - den ska bara nås internt av shimmen.
 | Env `TEMPLATE_DIR` | `/templates-user` |
 | Env `WRITE_TEMPLATE` | `true` |
 | Env `ALLOWED_REGISTRIES` | t.ex. `ghcr.io/armandur,lscr.io` (valfritt) |
+| Env `ALLOWED_RUNTIMES` | t.ex. `nvidia` (valfritt) |
 | Env `PROTECTED_NAMES` | t.ex. `plex,frigate,Nginx-Proxy-Manager-Official` (valfritt) |
 
 \* För att templaten ska synas i Unraids GUI ska den hamna i

@@ -1,10 +1,12 @@
 """Pydantic-scheman för create-API:t."""
 import re
+from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
 # Docker-container-namn: [a-zA-Z0-9][a-zA-Z0-9_.-]+
 _NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,62}$")
+RuntimeName = Annotated[str, Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$")]
 
 
 class PortMapping(BaseModel):
@@ -47,6 +49,7 @@ class ContainerSpec(BaseModel):
     image: str = Field(min_length=1)
     network: str = "bridge"
     restart: str | None = None
+    runtime: RuntimeName | None = None
     privileged: bool = False
     autostart: bool = True  # starta containern efter create
 
@@ -94,6 +97,7 @@ class ContainerPatch(BaseModel):
     image: str | None = None
     network: str | None = None
     restart: str | None = None
+    runtime: RuntimeName | None = None
     privileged: bool | None = None
 
     env: dict[str, str] | None = None

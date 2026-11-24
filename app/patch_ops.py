@@ -113,6 +113,7 @@ def _derive_spec(container, client: docker.DockerClient) -> tuple[ContainerSpec,
         image=cfg.get("Image") or "",
         network=host.get("NetworkMode") or "bridge",
         restart=(host.get("RestartPolicy") or {}).get("Name") or None,
+        runtime=host.get("Runtime") or None,
         privileged=bool(host.get("Privileged")),
         ports=ports,
         volumes=volumes,
@@ -149,7 +150,7 @@ def merge(spec: ContainerSpec, patch: ContainerPatch) -> ContainerSpec:
         env.pop(key, None)
     data["env"] = env
 
-    for field in ("image", "network", "restart", "privileged", "webui", "icon",
+    for field in ("image", "network", "restart", "runtime", "privileged", "webui", "icon",
                   "overview", "support", "project", "category", "autostart"):
         value = getattr(patch, field)
         if value is not None:
@@ -252,19 +253,7 @@ def _create_and_start(spec: ContainerSpec, client: docker.DockerClient):
     under ett namn som redan är taget, och rapporterar att containern är borta
     fast den står där.
     """
-    container = client.containers.create(
-        image=spec.image,
-        name=spec.name,
-        detach=True,
-        network=spec.network,
-        ports=docker_ops._ports(spec),
-        volumes=docker_ops._volumes(spec),
-        environment=spec.env,
-        labels=docker_ops._labels(spec),
-        devices=spec.devices,
-        privileged=spec.privileged,
-        restart_policy={"Name": spec.restart or config.DEFAULT_RESTART},
-    )
+    container = docker_ops._create_docker_container(spec, client)
     warnings: list[str] = []
     if spec.autostart:
         try:
@@ -291,6 +280,7 @@ def patch_container(name: str, patch: ContainerPatch,
 
     # Allt som kan neka ändringen ska göra det INNAN den gamla containern rörs.
     docker_ops._check_guardrails_for_patch(new_spec)
+    docker_ops._check_runtime(new_spec, client)
 
     # Pulla BARA när image:n faktiskt byts. En env-ändring ska inte dra ner
     # en ny latest och uppgradera containern i smyg - och för ett privat
